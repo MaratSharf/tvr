@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<ISO15745Profile xmlns="http://www.profibus.com/GSDML/2003/11/DeviceProfile" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.profibus.com/GSDML/2003/11/DeviceProfile ..\xsd\GSDML-DeviceProfile-V2.31.xsd">
+	<ProfileHeader>
+		<ProfileIdentification>PROFINET Device Profile</ProfileIdentification>
+		<ProfileRevision>1.00</ProfileRevision>
+		<ProfileName>Device Profile for PROFINET Devices</ProfileName>
+		<ProfileSource>PROFIBUS Nutzerorganisation e. V. (PNO)</ProfileSource>
+		<ProfileClassID>Device</ProfileClassID>
+		<ISO15745Reference>
+			<ISO15745Part>4</ISO15745Part>
+			<ISO15745Edition>1</ISO15745Edition>
+			<ProfileTechnology>GSDML</ProfileTechnology>
+		</ISO15745Reference>
+	</ProfileHeader>
+	<ProfileBody>
+		<DeviceIdentity DeviceID="0x0001" VendorID="0x01FE">
+			<InfoText TextId="ISRA-PNIO"/>
+			<VendorName Value="ISRA VISION AG"/>
+		</DeviceIdentity>
+		<DeviceFunction>
+			<Family MainFamily="I/O" ProductFamily="ISRA"/>
+		</DeviceFunction>
+		<ApplicationProcess>
+			<DeviceAccessPointList>
+				<DeviceAccessPointItem AddressAssignment="DCP;LOCAL" CheckDeviceID_Allowed="false" DNS_CompatibleName="ISRA-PNIO" DeviceAccessSupported="true" FixedInSlots="0" ID="DIM 1" ImplementationType="netX" MinDeviceInterval="32" ModuleIdentNumber="0x00000310" MultipleWriteSupported="true" NameOfStationNotTransferable="true" ObjectUUID_LocalIndex="1" PNIO_Version="V2.2" PhysicalSlots="0..255" PowerOnToCommReady="500" PrmBeginPrmEndSequenceSupported="false" SharedDeviceSupported="false" SharedInputSupported="false">
+					<ModuleInfo>
+						<Name TextId="BeadMaster"/>
+						<InfoText TextId="ISRA Info"/>
+						<VendorName Value="ISRA VISION AG"/>
+						<OrderNumber Value="ISRA_KN_IP"/>
+						<HardwareRelease Value="V3.4.19"/>
+						<SoftwareRelease Value="3.10.0.7"/>
+					</ModuleInfo>
+					<SubslotList>
+						<SubslotItem SubslotNumber="32768" TextId="TOK_Subslot_8000"/>
+						<SubslotItem SubslotNumber="32769" TextId="TOK_Subslot_8001"/>
+						<SubslotItem SubslotNumber="32770" TextId="TOK_Subslot_8002"/>
+					</SubslotList>
+					<IOConfigData MaxInputLength="1024" MaxOutputLength="1024"/>
+					<UseableModules>
+						<ModuleItemRef FixedInSlots="1" ModuleItemTarget="1"/>
+						<ModuleItemRef FixedInSlots="2" ModuleItemTarget="2"/>
+						<ModuleItemRef FixedInSlots="3" ModuleItemTarget="3"/>
+					</UseableModules>
+					<VirtualSubmoduleList>
+						<VirtualSubmoduleItem ID="DIM 1" SubmoduleIdentNumber="0x00000001" Writeable_IM_Records="1 2 3 4">
+							<IOData IOCS_Length="1" IOPS_Length="1"/>
+							<ModuleInfo CategoryRef="DAP Module">
+								<Name TextId="BeadMaster"/>
+								<InfoText TextId="ISRA Info"/>
+							</ModuleInfo>
+						</VirtualSubmoduleItem>
+					</VirtualSubmoduleList>
+					<SystemDefinedSubmoduleList>
+						<InterfaceSubmoduleItem ID="IDS_1I" SubslotNumber="32768" SubmoduleIdentNumber="0x00000001" TextId="Interface1" SupportedRT_Classes="RT_CLASS_1;RT_CLASS_3" IsochroneModeSupported="false" SupportedProtocols="SNMP;LLDP" SupportedMibs="MIB2" DCP_HelloSupported="false" NetworkComponentDiagnosisSupported="true">
+							<RT_Class3Properties MaxBridgeDelay="2340" MaxNumberIR_FrameData="128" StartupMode="Legacy"/>
+							<SynchronisationMode MaxLocalJitter="50" SupportedRole="SyncSlave" SupportedSyncProtocols="PTCP" T_PLL_MAX="1000"/>
+							<ApplicationRelations NumberOfAdditionalInputCR="0" NumberOfAdditionalMulticastProviderCR="0" NumberOfAdditionalOutputCR="0" NumberOfMulticastConsumerCR="0" NumberOfAR="0" StartupMode="Legacy">
+								<TimingProperties ReductionRatio="1 2 4 8 16 32 64 128 256 512" SendClock="32 64 128"/>
+								<RT_Class3TimingProperties ReductionRatio="1 2 4 8 16" SendClock="32 64 128"/>
+							</ApplicationRelations>
+						</InterfaceSubmoduleItem>
+						<PortSubmoduleItem CheckMAUTypeSupported="true" ID="IDS_1P" LinkStateDiagnosisCapability="Up+Down" MAUTypes="16" MaxPortRxDelay="340" MaxPortTxDelay="92" SubmoduleIdentNumber="0x00000001" SubslotNumber="32769" TextId="Port1"/>
+						<PortSubmoduleItem CheckMAUTypeSupported="true" ID="IDS_2P" LinkStateDiagnosisCapability="Up+Down" MAUTypes="16" MaxPortRxDelay="340" MaxPortTxDelay="92" SubmoduleIdentNumber="0x00000002" SubslotNumber="32770" TextId="Port2"/>
+					</SystemDefinedSubmoduleList>
+					<Graphics>
+						<GraphicItemRef GraphicItemTarget="1" Type="DeviceSymbol"/>
+						<GraphicItemRef GraphicItemTarget="1" Type="DeviceIcon"/>
+					</Graphics>
+				</DeviceAccessPointItem>
+			</DeviceAccessPointList>
+			<ModuleList>
+				<ModuleItem ID="1" ModuleIdentNumber="0x00000001">
+					<ModuleInfo CategoryRef="Input Module">
+						<Name TextId="4 Byte In"/>
+						<InfoText TextId="4 Byte In"/>
+					</ModuleInfo>
+					<VirtualSubmoduleList>
+						<VirtualSubmoduleItem ID="1" SubmoduleIdentNumber="0x00000001">
+							<IOData>
+								<Input>
+									<DataItem DataType="OctetString" Length="4" TextId="4byteinput"/>
+								</Input>
+							</IOData>
+							<ModuleInfo>
+								<Name TextId="4 Byte In"/>
+								<InfoText TextId="4 Byte In"/>
+							</ModuleInfo>
+						</VirtualSubmoduleItem>
+					</VirtualSubmoduleList>
+				</ModuleItem>
+				<ModuleItem ID="2" ModuleIdentNumber="0x00000002">
+					<ModuleInfo CategoryRef="Output Module">
+						<Name TextId="4 Byte Out"/>
+						<InfoText TextId="4 Byte Out"/>
+					</ModuleInfo>
+					<VirtualSubmoduleList>
+						<VirtualSubmoduleItem ID="2" SubmoduleIdentNumber="0x00000001">
+							<IOData>
+								<Output>
+									<DataItem DataType="OctetString" Length="4" TextId="4byteoutput"/>
+								</Output>
+							</IOData>
+							<ModuleInfo>
+								<Name TextId="4 Byte Out"/>
+								<InfoText TextId="4 Byte Out"/>
+							</ModuleInfo>
+						</VirtualSubmoduleItem>
+					</VirtualSubmoduleList>
+				</ModuleItem>
+				<ModuleItem ID="3" ModuleIdentNumber="0x00000003">
+					<ModuleInfo CategoryRef="Analog Output Module">
+						<Name TextId="2 Byte AnOut"/>
+						<InfoText TextId="2 Byte AnOut"/>
+					</ModuleInfo>
+					<VirtualSubmoduleList>
+						<VirtualSubmoduleItem ID="3" SubmoduleIdentNumber="0x00000001">
+							<IOData>
+								<Output>
+									<DataItem TextId="AnO 0" DataType="Unsigned16" UseAsBits="true"/>
+								</Output>
+							</IOData>
+							<ModuleInfo>
+								<Name TextId="2 Byte AnOut"/>
+								<InfoText TextId="2 Byte AnOut"/>
+							</ModuleInfo>
+						</VirtualSubmoduleItem>
+					</VirtualSubmoduleList>
+				</ModuleItem>
+			</ModuleList>
+			<GraphicsList>
+				<GraphicItem GraphicFile="GSDML-01FE-0001-ISRA-DEVICE" ID="1"/>
+			</GraphicsList>
+			<CategoryList>
+				<CategoryItem ID="DAP Module" TextId="DAP Module_CategoryName"/>
+				<CategoryItem ID="Input Module" TextId="Input Module_CategoryName"/>
+				<CategoryItem ID="Output Module" TextId="Output Module_CategoryName"/>
+				<CategoryItem ID="Analog Output Module" TextId="Analog Output Module_CategoryName"/>
+			</CategoryList>
+			<ExternalTextList>
+				<PrimaryLanguage>
+					<Text TextId="TOK_Subslot_8000" Value="X1"/>
+					<Text TextId="TOK_Subslot_8001" Value="X1 P1"/>
+					<Text TextId="TOK_Subslot_8002" Value="X1 P2"/>
+					<Text TextId="ISRA-PNIO" Value="ISRA-PNIO"/>
+					<Text TextId="PROFINET IO" Value="PROFINET IO"/>
+					<Text TextId="PNIO-DEVICE" Value="Modular Generic Device"/>
+					<Text TextId="Interface1" Value="Interface1"/>
+					<Text TextId="PN-IO" Value="PN-IO"/>
+					<Text TextId="Port1" Value="Port 1"/>
+					<Text TextId="Port2" Value="Port 2"/>
+					<Text TextId="BeadMaster" Value="BeadMaster/ISTrigger"/>
+					<Text TextId="ISRA Info" Value="ISRA Info"/>
+					<Text TextId="4 Byte In" Value="4 Byte Input"/>
+					<Text TextId="4 Byte Out" Value="4 Byte Output"/>
+					<Text TextId="2 Byte AnOut" Value="2 Byte Analog Output"/>
+					<Text TextId="AnO 0" Value="Analog Output 16"/>
+					<Text TextId="4byteinput" Value="Input 4"/>
+					<Text TextId="4byteoutput" Value="Output 4"/>
+					<Text TextId="DAP Module_CategoryName" Value="Device Access Point Modules"/>
+					<Text TextId="Input Module_CategoryName" Value="Input Modules"/>
+					<Text TextId="Output Module_CategoryName" Value="Output Modules"/>
+					<Text TextId="Analog Output Module_CategoryName" Value="Analog Output Modules"/>
+				</PrimaryLanguage>
+				<Language xml:lang="de">
+					<Text TextId="TOK_Subslot_8000" Value="X1"/>
+					<Text TextId="TOK_Subslot_8001" Value="X1 P1"/>
+					<Text TextId="TOK_Subslot_8002" Value="X1 P2"/>
+					<Text TextId="ISRA-PNIO" Value="ISRA-PNIO"/>
+					<Text TextId="PROFINET IO" Value="PROFINET IO"/>
+					<Text TextId="PNIO-DEVICE" Value="Modular Generic Device"/>
+					<Text TextId="Interface1" Value="Interface1"/>
+					<Text TextId="PN-IO" Value="PN-IO"/>
+					<Text TextId="Port1" Value="Port 1"/>
+					<Text TextId="Port2" Value="Port 2"/>
+					<Text TextId="BeadMaster" Value="BeadMaster/ISTrigger"/>
+					<Text TextId="ISRA Info" Value="ISRA Info"/>
+					<Text TextId="4 Byte In" Value="4 Byte Eingänge"/>
+					<Text TextId="4 Byte Out" Value="4 Byte Ausgänge"/>
+					<Text TextId="2 Byte AnOut" Value="2 Byte Analog Ausgänge"/>
+					<Text TextId="AnO 0" Value="Analog Ausgang 16"/>
+					<Text TextId="4byteinput" Value="Eingang 4"/>
+					<Text TextId="4byteoutput" Value="Ausgang 4"/>
+					<Text TextId="DAP Module_CategoryName" Value="Device Access Point Modules"/>
+					<Text TextId="Input Module_CategoryName" Value="Input Modules"/>
+					<Text TextId="Output Module_CategoryName" Value="Output Modules"/>
+					<Text TextId="Analog Output Module_CategoryName" Value="Analog Output Modules"/>
+				</Language>
+			</ExternalTextList>
+		</ApplicationProcess>
+	</ProfileBody>
+</ISO15745Profile>

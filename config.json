@@ -1,0 +1,79 @@
+{
+    "camera": {
+        "ip": "192.168.1.36",
+        "exposure": 10000,
+        "gain": 1.0,
+        "simulation": false,
+        "image_folder": "C:\\proj\\python\\tvrus\\data\\images\\foto\\NG",
+        "modbus": {
+            "enabled": true,
+            "ip": "192.168.1.36",
+            "port": 502,
+            "unit": 1,
+            "control_offset": 0,
+            "status_offset": 1,
+            "result_offset": 2,
+            "command_offset": 500,
+            "byte_order": "little",
+            "command_terminator": "",
+            "trigger_timeout": 10
+        }
+    },
+    "seam_control": {
+        "min_width_mm": 1.0,
+        "max_width_mm": 6.0,
+        "px_per_mm": 50.0,
+        "threshold": 120
+    },
+    "communication": {
+        "mode": "modbus",
+        "modbus": {
+            "ip": "192.168.1.99",
+            "port": 502,
+            "unit": 1,
+            "input_reg": 51,
+            "output_write_reg": 470,
+            "di_map": {
+                "di04": 4,
+                "di05": 5,
+                "di06": 6
+            },
+            "do_map": {
+                "do00": 0,
+                "do01": 1,
+                "do02": 2,
+                "do03": 3
+            }
+        },
+        "profinet": {
+            "device_name": "cifX0"
+        },
+        "openshowvar": {
+            "ip": "192.168.1.1",
+            "port": 7000
+        }
+    },
+    "logging": {
+        "file": "app.log",
+        "level": "INFO"
+    },
+    "display": {
+        "enabled": true,
+        "wait_key_ms": 1
+    },
+    "limits": {
+        "cycle_time_s": 0.8
+    },
+    "storage": {
+        "max_files": 0,
+        "max_age_days": 0
+    },
+    "results_folder": "C:\\proj\\python\\tvrus\\data\\results",
+    "roi": {
+        "enabled": true,
+        "x": 389,
+        "y": 401,
+        "w": 199,
+        "h": 244
+    }
+}

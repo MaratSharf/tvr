@@ -1,0 +1,10 @@
+opencv-python==4.8.1.78
+numpy==1.24.3
+pymodbus==2.5.3
+PyInstaller==5.13.2
+# pyopenshowvar - не доступен в PyPI, реализован через сокеты в communication/openshowvar.py
+#
+# Версии зафиксированы под целевое окружение Windows 7 + Python 3.8.10:
+#   pymodbus 3.x не содержит pymodbus.client.sync и требует Python >= 3.10
+#   numpy 2.x и opencv-python >= 4.10 требуют Python >= 3.10
+# Копии wheel-файлов лежат в wheels/ для офлайн-установки (см. OFFLINE_INSTALL.md)
