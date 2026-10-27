@@ -141,6 +141,65 @@ def report_cycle_time(prefix, started, budget):
     return elapsed
 
 
+class ConsoleReporter:
+    """Вывод статусов и результатов в консоль (запуск без GUI)."""
+
+    def status(self, text):
+        print(text)
+
+    def result(self, ok, width, msg, image=None, raw=None, bbox=None):
+        print(f"  {'OK' if ok else 'NOK'}: {width:.2f}mm - {msg}")
+
+
+def _stopped(stop_event):
+    return stop_event is not None and stop_event.is_set()
+
+
+def _wait_for_di(comm, di_number, timeout, stop_event):
+    """wait_for_di с прерыванием по stop_event (иначе — исходный вызов)."""
+    if stop_event is None:
+        return comm.wait_for_di(di_number, timeout=timeout)
+    deadline = time.time() + timeout
+    while True:
+        if _stopped(stop_event):
+            return False
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return False
+        if comm.wait_for_di(di_number, timeout=min(0.5, remaining)):
+            return True
+
+
+def _wait_for_di_any(comm, di_numbers, timeout, stop_event):
+    """wait_for_di_any с прерыванием по stop_event. Возвращает DI или None."""
+    if stop_event is None:
+        return comm.wait_for_di_any(di_numbers, timeout=timeout)
+    deadline = time.time() + timeout
+    while True:
+        if _stopped(stop_event):
+            return None
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return None
+        di = comm.wait_for_di_any(di_numbers, timeout=min(0.5, remaining))
+        if di is not None:
+            return di
+
+
+def _wait_interruptible(fn, timeout, stop_event, poll=0.5):
+    """Ожидание fn(timeout=poll) до срабатывания, таймаута или остановки."""
+    if stop_event is None:
+        return fn(timeout=timeout)
+    deadline = time.time() + timeout
+    while True:
+        if _stopped(stop_event):
+            return False
+        if fn(timeout=poll):
+            return True
+        if time.time() >= deadline:
+            return False
+
+
 class ResultSaver:
     def __init__(self, config):
         self.folder = resolve_path(config.get('results_folder', ''))
@@ -216,16 +275,18 @@ def select_roi_mode(camera, processor, roi_manager):
         print("ROI selection cancelled")
 
 
-def run_modbus_mode(camera, processor, comm, display, saver, budget):
+def run_modbus_mode(camera, processor, comm, display, saver, budget,
+                    stop_event=None, reporter=None):
     """Modbus/Owen MK210 mode: DI/DO based test stand logic."""
+    reporter = reporter or ConsoleReporter()
     outputs_reset_checked(comm)
-    print("System ready - waiting for DI04 (start)")
-    while True:
-        print("Waiting for DI04 (start)...")
-        if not comm.wait_for_di(4, timeout=30):
+    reporter.status("System ready - waiting for DI04 (start)")
+    while not _stopped(stop_event):
+        reporter.status("Waiting for DI04 (start)...")
+        if not _wait_for_di(comm, 4, 30, stop_event):
             continue
         cycle_start = time.time()
-        print("DI04 received - starting conveyor")
+        reporter.status("DI04 received - starting conveyor")
 
         if comm.set_conveyor(True) is False:
             logger.error("Failed to start conveyor (DO0)")
@@ -233,9 +294,12 @@ def run_modbus_mode(camera, processor, comm, display, saver, budget):
         all_ok = True
         capture_count = 0
 
-        while True:
-            print("Waiting for DI06 (capture) or DI05 (end)...")
-            di = comm.wait_for_di_any([5, 6], timeout=30)
+        while not _stopped(stop_event):
+            reporter.status("Waiting for DI06 (capture) or DI05 (end)...")
+            di = _wait_for_di_any(comm, [5, 6], 30, stop_event)
+
+            if _stopped(stop_event):
+                break
 
             if di is None:
                 logger.error("DI05/DI06 timeout")
@@ -243,107 +307,127 @@ def run_modbus_mode(camera, processor, comm, display, saver, budget):
                 break
 
             if di == 5:
-                print("DI05 received - stopping conveyor")
+                reporter.status("DI05 received - stopping conveyor")
                 break
 
             capture_count += 1
             capture_start = time.time()
-            print(f"DI06 received - capture #{capture_count}")
+            reporter.status(f"DI06 received - capture #{capture_count}")
 
             if not camera.trigger_capture():
                 logger.error("Camera trigger failed")
                 all_ok = False
-                print("NOK: Camera trigger failed")
+                reporter.status("NOK: Camera trigger failed")
                 report_cycle_time(f"Capture #{capture_count} (trigger failed)", capture_start, budget)
                 continue
 
             image = grab_image(camera)
+            if _stopped(stop_event):
+                break
             if image is None:
                 logger.error("No new image in folder")
                 all_ok = False
-                print("NOK: No new image")
+                reporter.status("NOK: No new image")
                 report_cycle_time(f"Capture #{capture_count} (no image)", capture_start, budget)
                 continue
 
-            ok, width, msg, bbox = processor.process(image)
+            ok, width, msg, detail = processor.process(image)
             logger.info(f"Capture #{capture_count}: {width:.2f}mm - {msg}")
-            print(f"  {'OK' if ok else 'NOK'}: {width:.2f}mm - {msg}")
 
             if not ok:
                 all_ok = False
 
-            result_img = processor.draw_result(image, bbox, ok, width)
+            result_img = processor.draw_result(image, detail=detail, ok=ok, width_mm=width)
             display.show(result_img)
             saver.save(result_img, ok, width, msg)
+            bbox = detail.get('bbox')
+            reporter.result(ok, width, msg, image=result_img, raw=image, bbox=bbox)
             report_cycle_time(f"Capture #{capture_count} processing", capture_start, budget)
 
         if comm.set_conveyor(False) is False:
             logger.error("Failed to stop conveyor (DO0)")
+
+        if _stopped(stop_event):
+            # Остановка оператором: выходы сбрасываются, результат не отправляется.
+            outputs_reset_checked(comm)
+            logger.info("Stopped by operator")
+            break
+
         if not send_result_checked(comm, all_ok):
             logger.critical(f"Result not delivered to PLC: {'OK' if all_ok else 'NG'}")
         result_text = "OK" if all_ok else "NG"
         logger.info(f"Cycle complete: {capture_count} captures - {result_text}")
-        print(f"Cycle complete: {capture_count} captures - {result_text}")
+        reporter.status(f"Cycle complete: {capture_count} captures - {result_text}")
 
         report_cycle_time(f"Cycle total ({capture_count} captures)", cycle_start, budget)
         outputs_reset_checked(comm)
         time.sleep(0.5)
 
 
-def run_profinet_mode(camera, processor, comm, display, saver, budget):
+def run_profinet_mode(camera, processor, comm, display, saver, budget,
+                      stop_event=None, reporter=None):
     """PROFINET/cifX mode: ISRA BEADMASTER2D protocol with KRC4."""
-    print("PROFINET/ISRA protocol mode - waiting for KRC4 commands")
-    while True:
-        print("Waiting for KRC4 trigger (O_START + O_ACQ)...")
-        if not comm.wait_for_trigger(timeout=30):
+    reporter = reporter or ConsoleReporter()
+    reporter.status("PROFINET/ISRA protocol mode - waiting for KRC4 commands")
+    while not _stopped(stop_event):
+        reporter.status("Waiting for KRC4 trigger (O_START + O_ACQ)...")
+        if not _wait_interruptible(comm.wait_for_trigger, 30, stop_event):
             continue
+        if _stopped(stop_event):
+            break
         cycle_start = time.time()
-        print("Trigger received - KRC4 started measurement")
+        reporter.status("Trigger received - KRC4 started measurement")
 
         if not camera.trigger_capture():
             logger.error("Camera trigger failed")
             send_result_checked(comm, False, error_code=1)
-            print("NOK: Camera trigger failed")
+            reporter.status("NOK: Camera trigger failed")
             continue
 
         image = grab_image(camera)
+        if _stopped(stop_event):
+            break
         if image is None:
             logger.error("No new image in folder")
             send_result_checked(comm, False, error_code=2)
-            print("NOK: No new image")
+            reporter.status("NOK: No new image")
             continue
 
-        ok, width, msg, bbox = processor.process(image)
+        ok, width, msg, detail = processor.process(image)
         logger.info(f"Measurement: {width:.2f}mm - {msg}")
-        print(f"  {'OK' if ok else 'NOK'}: {width:.2f}mm - {msg}")
 
         if not send_result_checked(comm, ok, width_mm=width):
             logger.critical(f"Result not delivered to KRC4: {'OK' if ok else 'NG'}")
 
-        result_img = processor.draw_result(image, bbox, ok, width)
+        result_img = processor.draw_result(image, detail=detail, ok=ok, width_mm=width)
         display.show(result_img)
         saver.save(result_img, ok, width, msg)
+        bbox = detail.get('bbox')
+        reporter.result(ok, width, msg, image=result_img, raw=image, bbox=bbox)
         report_cycle_time("KRC4 measurement", cycle_start, budget)
 
-        print("Waiting for KRC4 reset (O_RESET)...")
-        comm.wait_for_reset(timeout=30)
-        print("Reset received - ready for next cycle")
+        reporter.status("Waiting for KRC4 reset (O_RESET)...")
+        _wait_interruptible(comm.wait_for_reset, 30, stop_event)
+        reporter.status("Reset received - ready for next cycle")
 
 
-def run_simulation_mode(camera, processor, comm, display, saver, budget):
-    print("Simulation mode - press Ctrl+C to stop")
-    while True:
+def run_simulation_mode(camera, processor, comm, display, saver, budget,
+                        stop_event=None, reporter=None):
+    reporter = reporter or ConsoleReporter()
+    reporter.status("Simulation mode - press Ctrl+C to stop")
+    while not _stopped(stop_event):
         loop_start = time.time()
         camera.trigger_capture()
         time.sleep(0.5)
         image = camera.capture()
         if image is not None:
-            ok, width, msg, bbox = processor.process(image)
+            ok, width, msg, detail = processor.process(image)
             logger.info(f"Width: {width:.2f}mm - {msg}")
-            print(f"{'OK' if ok else 'NOK'}: {width:.2f}mm - {msg}")
-            result_img = processor.draw_result(image, bbox, ok, width)
+            result_img = processor.draw_result(image, detail=detail, ok=ok, width_mm=width)
             display.show(result_img)
             saver.save(result_img, ok, width, msg)
+            bbox = detail.get('bbox')
+            reporter.result(ok, width, msg, image=result_img, raw=image, bbox=bbox)
         report_cycle_time("Simulation loop", loop_start, budget)
         time.sleep(1)
 
@@ -358,11 +442,21 @@ def run_storage_cleanup(config):
         resolve_path(config.get('camera', {}).get('image_folder', '')),
         resolve_path(config.get('results_folder', '')),
     ]
+    # Папка эталонов НЕ подлежит автоочистке — явно исключаем
+    etalon_folder = config.get('training', {}).get('folder', '')
+    if etalon_folder:
+        etalon_folder = resolve_path(etalon_folder)
     for folder in folders:
+        if etalon_folder and os.path.abspath(folder) == os.path.abspath(etalon_folder):
+            continue
         cleanup_folder(folder, max_files=max_files, max_age_days=max_age_days)
 
 
 def main():
+    if "--gui" in sys.argv:
+        from gui import run_gui
+        return run_gui()
+
     try:
         config = load_config()
     except Exception as e:

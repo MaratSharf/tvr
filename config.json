@@ -23,7 +23,15 @@
         "min_width_mm": 1.0,
         "max_width_mm": 6.0,
         "px_per_mm": 50.0,
-        "threshold": 120
+        "threshold": 120,
+        "use_otsu": true,
+        "step_px": 15,
+        "max_allowed_gap_mm": 0.5,
+        "pos_tolerance_mm": 2.5,
+        "min_fill_ratio": 0.85,
+        "morph_kernel_size": 3,
+        "min_contrast_std": 8.0,
+        "gap_min_width_mm": 0.2
     },
     "communication": {
         "mode": "modbus",
@@ -71,9 +79,19 @@
     "results_folder": "C:\\proj\\python\\tvrus\\data\\results",
     "roi": {
         "enabled": true,
-        "x": 389,
-        "y": 401,
-        "w": 199,
-        "h": 244
+        "x": 168,
+        "y": 105,
+        "w": 719,
+        "h": 521
+    },
+    "training": {
+        "enabled": false,
+        "mode": "verify",
+        "active_product_id": "ProductID_01",
+        "folder": "data/etalon",
+        "step_px": 15,
+        "max_allowed_gap_mm": 0.0,
+        "pos_tolerance_mm": 2.5,
+        "min_contrast_std": 8.0
     }
 }
