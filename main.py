@@ -11,6 +11,30 @@ from camera import HikrobotCamera
 from image_processor import SeamProcessor
 from roi_selector import ROISelector, ROIManager
 
+def _get_point_name(di_value, point_counter, point_config):
+    """Получить имя точки на основе значения DI и конфигурации.
+    
+    Args:
+        di_value: Номер активированного DI (4-9)
+        point_counter: Счетчик точек для режима stand-by
+        point_config: Конфигурация точек {di_number: point_name}
+    
+    Returns:
+        Имя точки (строка)
+    """
+    # Сначала проверяем явную конфигурацию robot-сигналов
+    if point_config and di_value in point_config:
+        return point_config[di_value]
+    # Если DI в диапазоне роботских сигналов (7-9), используем именованную конфигурацию
+    if 7 <= di_value <= 9 and point_config:
+        # Авто-генерация имени если не задано explicitly
+        return point_config.get(di_value, f"Point_{di_value - 3}")
+    # Режим stand-by: автоматическое именование по порядку
+    # DI4=4 -> Point_1, DI5=5 -> Point_2, DI6=6 -> Point_3 и т.д.
+    if 4 <= di_value <= 6:
+        return f"Point_{point_counter}"
+    return f"Unknown_DI{di_value}"
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger("main")
 
@@ -207,7 +231,7 @@ class ResultSaver:
         if self.enabled:
             os.makedirs(self.folder, exist_ok=True)
 
-    def save(self, image, ok, width_mm, msg):
+    def save(self, image, ok, width_mm, msg, point_name=None):
         if not self.enabled or image is None:
             return
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -216,6 +240,12 @@ class ResultSaver:
         path = os.path.join(self.folder, filename)
         if not cv2.imwrite(path, image):
             logger.error(f"Failed to save result image: {path}")
+        
+        # Save point_name information if provided
+        if point_name is not None:
+            # Store point_name in a sidecar or metadata file
+            # For now, we just log it
+            logger.info(f"Point name: {point_name} saved with image {filename}")
 
 
 class Display:
@@ -276,7 +306,8 @@ def select_roi_mode(camera, processor, roi_manager):
 
 
 def run_modbus_mode(camera, processor, comm, display, saver, budget,
-                    stop_event=None, reporter=None):
+                    stop_event=None, reporter=None,
+                    point_signals=None):
     """Modbus/Owen MK210 mode: DI/DO based test stand logic."""
     reporter = reporter or ConsoleReporter()
     outputs_reset_checked(comm)
@@ -291,12 +322,23 @@ def run_modbus_mode(camera, processor, comm, display, saver, budget,
         if comm.set_conveyor(True) is False:
             logger.error("Failed to start conveyor (DO0)")
 
+        # Определяем режим работы на основе point_signals
+        # Если переданы сигналы - работаем с роботом, иначе - stand-by
+        use_robot_mode = point_signals is not None
+        robot_point_config = point_signals or {}
+
         all_ok = True
         capture_count = 0
+        point_counter = 1  # Инициализация счетчика точек (Point_1, Point_2, ...)
 
         while not _stopped(stop_event):
-            reporter.status("Waiting for DI06 (capture) or DI05 (end)...")
-            di = _wait_for_di_any(comm, [5, 6], 30, stop_event)
+            # Формируем список ожидаемых DI в зависимости от режима
+            if use_robot_mode and robot_point_dis:
+                # Robot mode: ждем либо стоп, либо любое signal точки
+                di = _wait_for_di_any(comm, [5] + list(robot_point_dis), 30, stop_event)
+            else:
+                # Stand-by mode: ждем DI06 (capture) или DI05 (end)
+                di = _wait_for_di_any(comm, [5, 6], 30, stop_event)
 
             if _stopped(stop_event):
                 break
@@ -312,7 +354,23 @@ def run_modbus_mode(camera, processor, comm, display, saver, budget,
 
             capture_count += 1
             capture_start = time.time()
-            reporter.status(f"DI06 received - capture #{capture_count}")
+            
+            # Обработка сигнала захвата
+            if use_robot_mode and di in robot_point_dis:
+                # Robot signal - получаем имя точки из конфигурации
+                point_name = robot_point_config.get(di, f"Point_{di}")
+                reporter.status(f"Robot signal received - capture #{capture_count}: {point_name}")
+            elif di == 6:
+                # DI06 press - stand-by mode
+                point_name = f"Point_{point_counter}"
+                point_counter += 1
+                reporter.status(f"Stand-by capture #{capture_count}: {point_name}")
+            else:
+                # Другая DI в robot режиме
+                point_name = _get_point_name(di, point_counter, robot_point_config)
+                if di not in robot_point_config:
+                    point_counter += 1  # Увеличиваем счетчик только для неизвестных DI
+                reporter.status(f"Capture #{capture_count}: {point_name}")
 
             if not camera.trigger_capture():
                 logger.error("Camera trigger failed")
@@ -339,9 +397,10 @@ def run_modbus_mode(camera, processor, comm, display, saver, budget,
 
             result_img = processor.draw_result(image, detail=detail, ok=ok, width_mm=width)
             display.show(result_img)
-            saver.save(result_img, ok, width, msg)
+            saver.save(result_img, ok, width, msg, point_name=point_name)
             bbox = detail.get('bbox')
-            reporter.result(ok, width, msg, image=result_img, raw=image, bbox=bbox)
+            reporter.result(ok, width, msg, image=result_img, raw=image, bbox=bbox,
+                            detail=detail)
             report_cycle_time(f"Capture #{capture_count} processing", capture_start, budget)
 
         if comm.set_conveyor(False) is False:

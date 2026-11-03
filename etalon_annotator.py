@@ -42,8 +42,10 @@ class EtalonAnnotator(tk.Toplevel):
         if ann.get('ignore_rects'):
             self.ignore_rects = [list(r) for r in ann['ignore_rects']]
         self.step_px = ann.get('step_px', config.get('training', {}).get('step_px', 15))
-        self.max_allowed_gap_mm = ann.get('max_allowed_gap_mm',
-                                          config.get('training', {}).get('max_allowed_gap_mm', 0.0))
+        seam_cfg = config.get('seam_control', {})
+        self.max_allowed_gap_mm = ann.get('max_allowed_gap_mm') or \
+            config.get('training', {}).get('max_allowed_gap_mm') or \
+            seam_cfg.get('max_allowed_gap_mm', 0.5)
         self.pos_tolerance_mm = ann.get('pos_tolerance_mm',
                                         config.get('training', {}).get('pos_tolerance_mm', 2.5))
         self._build_ui()
@@ -251,7 +253,7 @@ class EtalonAnnotator(tk.Toplevel):
             color = (0, 0, 255) if sl['is_gap'] else ((0, 255, 0) if sl['status'] == 'ok' else (0, 255, 255))
             cv2.line(img, (x1, y1), (x2, y2), color, 1)
             if sl['is_gap']:
-                cv2.circle(img, (cx, cy), 3, (0, 0, 255), -1)
+                cv2.circle(img, (int(cx), int(cy)), 3, (0, 0, 255), -1)
         if self.scale != 1.0:
             disp = cv2.resize(img, (self.canvas_w, self.canvas_h), interpolation=cv2.INTER_AREA)
         else:
@@ -300,6 +302,7 @@ class EtalonAnnotator(tk.Toplevel):
             step_px=step_px,
             max_allowed_gap_mm=max_gap,
             pos_tolerance_mm=pos_tol,
+            skip_align=True,
         )
         ok, width, msg, detail = proc.process(self.base_image)
         self._slices_preview = detail.get('slices', [])
@@ -326,6 +329,10 @@ class EtalonAnnotator(tk.Toplevel):
         self.metrics_var.set(' | '.join(lines))
 
     def _save_etalon(self):
+        # Если пользователь не нажал «Проверить разметку» — запускаем проверку,
+        # иначе эталон сохранится без метрик (ширина 0.00 mm / «— mm»)
+        if len(self.centerline_points) >= 2 and not self._slices_preview:
+            self._preview_check()
         metrics = {}
         if self._slices_preview:
             widths = [s['width_mm'] for s in self._slices_preview if not s['is_gap']]

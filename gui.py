@@ -7,7 +7,7 @@ import tempfile
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
 import cv2
 
@@ -18,6 +18,7 @@ from image_processor import SeamProcessor
 from roi_selector import ROIManager
 from etalon_store import EtalonStore
 from etalon_annotator import EtalonAnnotator
+from etalon_viewer import EtalonViewer
 
 logger = logging.getLogger("gui")
 
@@ -45,13 +46,46 @@ class GuiReporter:
     def status(self, text):
         self.ui_queue.put(('status', str(text)))
 
-    def result(self, ok, width, msg, image=None, raw=None, bbox=None):
+    def result(self, ok, width, msg, image=None, raw=None, bbox=None, detail=None):
+        summary = _detail_summary(detail)
         self.ui_queue.put(('result', bool(ok), float(width), str(msg),
-                           time.strftime('%H:%M:%S')))
+                           time.strftime('%H:%M:%S'), summary))
         if raw is not None:
             self.ui_queue.put(('raw', raw))
         if image is not None:
             self.ui_queue.put(('frame', image))
+
+
+def _detail_summary(detail):
+    """Сжатая сводка результата для панели GUI (без изображений)."""
+    if not detail:
+        return None
+    allow = detail.get('allowable') or {}
+    viol = []
+    for sl in detail.get('slices') or []:
+        st = sl.get('status')
+        if st in ('gap', 'invalid') and not sl.get('valid'):
+            viol.append({'index': sl.get('index'), 'status': st,
+                         'width_mm': sl.get('width_mm', 0.0),
+                         'reason': sl.get('reason', '')})
+        elif st == 'wid' and sl.get('valid'):
+            viol.append({'index': sl.get('index'), 'status': st,
+                         'width_mm': sl.get('width_mm', 0.0), 'reason': 'out of limits'})
+    return {
+        'mean_width_mm': detail.get('mean_width_mm', 0.0),
+        'min_width_mm': detail.get('min_width_mm', 0.0),
+        'max_width_mm': detail.get('max_width_mm', 0.0),
+        'max_gap_mm': detail.get('max_gap_mm', 0.0),
+        'fill_ratio': detail.get('fill_ratio', 0.0),
+        'valid_slices': detail.get('valid_slices', 0),
+        'checked_slices': detail.get('checked_slices', 0),
+        'limit_min_mm': allow.get('min_width_mm'),
+        'limit_max_mm': allow.get('max_width_mm'),
+        'limits_source': allow.get('limits_source'),
+        'calibration': detail.get('calibration') or {},
+        'violations': viol[:30],
+        'state': detail.get('state'),
+    }
 
 
 class NullDisplay:
@@ -111,6 +145,7 @@ class SettingsWindow(tk.Toplevel):
         self.min_var = tk.StringVar(value=str(seam.get('min_width_mm', '')))
         self.max_var = tk.StringVar(value=str(seam.get('max_width_mm', '')))
         self.cycle_var = tk.StringVar(value=str(config.get('limits', {}).get('cycle_time_s', '')))
+        self.skip_align_var = tk.BooleanVar(value=bool(seam.get('skip_centerline_align', False)))
 
         frame = ttk.Frame(self, padding=12)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -122,10 +157,12 @@ class SettingsWindow(tk.Toplevel):
             ('Unit камеры (Modbus)', ttk.Entry(frame, textvariable=self.cam_unit_var, width=22)),
             ('IP ПЛК', ttk.Entry(frame, textvariable=self.plc_ip_var, width=22)),
             ('Unit ПЛК (Modbus)', ttk.Entry(frame, textvariable=self.plc_unit_var, width=22)),
-            ('Калибровка px_per_mm', ttk.Entry(frame, textvariable=self.px_var, width=22)),
-            ('Мин. ширина шва, мм', ttk.Entry(frame, textvariable=self.min_var, width=22)),
-            ('Макс. ширина шва, мм', ttk.Entry(frame, textvariable=self.max_var, width=22)),
+            ('Калибровка px_per_mm (проверяется против эталона)', ttk.Entry(
+                frame, textvariable=self.px_var, width=22)),
+            ('Мин. ширина шва, мм (источник: config.json)',ttk.Entry(frame, textvariable=self.min_var, width=22)),
+            ('Макс. ширина шва, мм (источник: config.json)', ttk.Entry(frame, textvariable=self.max_var, width=22)),
             ('Лимит цикла, с', ttk.Entry(frame, textvariable=self.cycle_var, width=22)),
+            ('Отключить автовыравнивание по отверстию', ttk.Checkbutton(frame, variable=self.skip_align_var)),
         ]
         for i, (label, widget) in enumerate(rows):
             ttk.Label(frame, text=label).grid(row=i, column=0, sticky='w', pady=3, padx=(0, 12))
@@ -170,6 +207,7 @@ class SettingsWindow(tk.Toplevel):
         config['seam_control']['min_width_mm'] = min_w
         config['seam_control']['max_width_mm'] = max_w
         config['limits']['cycle_time_s'] = cycle
+        config['seam_control']['skip_centerline_align'] = self.skip_align_var.get()
 
         try:
             save_config_atomic(config['_config_path'], config)
@@ -339,6 +377,8 @@ class InspectionGUI(tk.Tk):
         ttk.Button(toolbar, text='ROI-зона', command=self.open_roi_editor).pack(side=tk.LEFT)
         ttk.Button(toolbar, text='Настройки', command=self.open_settings).pack(
             side=tk.LEFT, padx=6)
+        ttk.Button(toolbar, text='Эталоны', command=self.open_etalon_viewer).pack(
+            side=tk.LEFT, padx=(0, 6))
 
         self.mode_label = ttk.Label(toolbar, text=self._mode_text(), font=('Segoe UI', 10, 'bold'))
         self.mode_label.pack(side=tk.LEFT, padx=18)
@@ -360,6 +400,8 @@ class InspectionGUI(tk.Tk):
         self.product_combo.pack(side=tk.LEFT, padx=2)
         self.product_combo['values'] = self._list_product_ids()
         self.product_combo.set(self.training_product_id)
+        self.product_combo.bind('<<ComboboxSelected>>',
+                                lambda e: self._on_train_mode_change())
         ttk.Button(train_frame, text='+', width=2, command=self._create_product_id).pack(side=tk.LEFT, padx=2)
 
         ttk.Button(train_frame, text='💾 Сохранить в эталон и разметить',
@@ -403,8 +445,14 @@ class InspectionGUI(tk.Tk):
         self.result_label = tk.Label(info, text='—', font=('Segoe UI', 40, 'bold'),
                                      bg='#9e9e9e', fg='white', width=7, height=2)
         self.result_label.pack(fill=tk.X)
-        self.width_label = ttk.Label(info, text='Ширина: — мм', font=('Segoe UI', 14))
+        self.width_label = ttk.Label(info, text='Ср. ширина: — мм', font=('Segoe UI', 14))
         self.width_label.pack(anchor='w', pady=(14, 0))
+        self.range_label = ttk.Label(info, text='Min: —  Max: —  Разрыв: —',
+                                     font=('Segoe UI', 11))
+        self.range_label.pack(anchor='w', pady=(2, 0))
+        self.limits_label = ttk.Label(info, text='Допуск: — (источник: —)',
+                                      font=('Segoe UI', 11), foreground='#555555')
+        self.limits_label.pack(anchor='w', pady=(2, 0))
         self.msg_label = ttk.Label(info, text='', font=('Segoe UI', 10), foreground='#555555')
         self.msg_label.pack(anchor='w', pady=(2, 0))
         self.time_label = ttk.Label(info, text='Время: —', font=('Segoe UI', 11))
@@ -449,7 +497,9 @@ class InspectionGUI(tk.Tk):
         self.ok_count = 0
         self.ng_count = 0
         self.result_label.config(text='—', bg='#9e9e9e')
-        self.width_label.config(text='Ширина: — мм')
+        self.width_label.config(text='Ср. ширина: — мм')
+        self.range_label.config(text='Min: —  Max: —  Разрыв: —')
+        self.limits_label.config(text='Допуск: — (источник: —)')
         self.msg_label.config(text='')
         self.time_label.config(text='Время: —')
         self.stats_label.config(text='OK: 0    NOK: 0    Всего: 0')
@@ -495,6 +545,7 @@ class InspectionGUI(tk.Tk):
             roi_manager = ROIManager(config['_config_path'])
             roi_manager.load_from_config(config)
             processor.set_roi(roi_manager.roi)
+            self._apply_active_etalon_to_processor(processor)
             comm = create_communicator(config)
             # В режиме обучения «Захват» блокируем отправку боевых сигналов в ПЛК
             if self.training_block_send:
@@ -564,7 +615,8 @@ class InspectionGUI(tk.Tk):
                 tag = 'warning'
             self._append_log(text, tag)
         elif kind == 'result':
-            ok, width, msg, stamp = payload
+            ok, width, msg, stamp = payload[0], payload[1], payload[2], payload[3]
+            summary = payload[4] if len(payload) > 4 else None
             if ok:
                 self.ok_count += 1
                 result_text, bg = 'OK', '#2e7d32'
@@ -573,8 +625,29 @@ class InspectionGUI(tk.Tk):
                 result_text, bg = 'NOK', '#c62828'
             total = self.ok_count + self.ng_count
             self.result_label.config(text=result_text, bg=bg)
-            self.width_label.config(text=f'Ширина: {width:.2f} мм')
-            self.msg_label.config(text=msg)
+            self.width_label.config(text=f'Ср. ширина: {width:.2f} мм')
+            if summary:
+                # фактические измерения срезов (min/max из detail), не допуски
+                min_w, max_w, gap = (summary.get('min_width_mm', 0.0),
+                                     summary.get('max_width_mm', 0.0),
+                                     summary.get('max_gap_mm', 0.0))
+                self.range_label.config(
+                    text=f'Min: {min_w:.2f}  Max: {max_w:.2f}  Разрыв: {gap:.2f} мм')
+                src = summary.get('limits_source') or '?'
+                self.limits_label.config(text=(
+                    f'Допуск: {summary.get("limit_min_mm") or 0.0:.2f}-'
+                    f'{summary.get("limit_max_mm") or 0.0:.2f} мм '
+                    f'(источник: {src})'))
+                # Что именно вызвало NOK: полная строка msg уже содержит
+                # ERR_* сообщения; повторим ключевые цифры явно.
+                if not ok:
+                    n_viol = len(summary.get('violations') or [])
+                    self.msg_label.config(text=(
+                        f'{msg}  |  нарушений по срезам: {n_viol}, валидных: '
+                        f'{summary.get("valid_slices", 0)}/'
+                        f'{summary.get("checked_slices", 0)}'))
+            else:
+                self.msg_label.config(text=msg)
             self.time_label.config(text=f'Время: {stamp}')
             self.stats_label.config(
                 text=f'OK: {self.ok_count}    NOK: {self.ng_count}    Всего: {total}')
@@ -608,6 +681,19 @@ class InspectionGUI(tk.Tk):
 
     def open_settings(self):
         SettingsWindow(self, self.config_data, self._on_settings_saved)
+
+    def open_etalon_viewer(self):
+        pid = self.product_combo.get() or self.training_product_id
+        EtalonViewer(self, self.etalon_store, self.config_data,
+                     product_id=pid, on_changed=self._on_etalons_changed)
+
+    def _on_etalons_changed(self):
+        self.product_combo['values'] = self._list_product_ids()
+        if self.training_product_id not in self._list_product_ids():
+            ids = self._list_product_ids()
+            if ids:
+                self.training_product_id = ids[0]
+                self.product_combo.set(ids[0])
 
     def _on_settings_saved(self, config):
         self.config_data = config
@@ -659,6 +745,69 @@ class InspectionGUI(tk.Tk):
         self._append_log(f'ROI сохранён: {roi[0]},{roi[1]} {roi[2]}x{roi[3]}')
         self.status_var.set('ROI сохранён')
 
+    def _apply_active_etalon_to_processor(self, processor):
+        """Загружает разметку (centerline_px, ignore_rects) последнего 'ok'-эталона
+        выбранного ProductID в SeamProcessor в режиме 'verify'."""
+        if processor is None:
+            return
+        mode = self.train_mode_var.get()
+        pid = self.product_combo.get() or self.training_product_id
+        if mode != 'verify':
+            processor.clear_etalon_annotation()
+            return
+        if self.etalon_store is None or not pid:
+            processor.clear_etalon_annotation()
+            return
+
+        loaded_ann = None
+        loaded_name = None
+        loaded_sidecar = None
+        for entry in self.etalon_store.scan_etalons(pid):
+            if entry.get('label') not in (None, 'ok'):
+                continue
+            _, sidecar = self.etalon_store.load_etalon(pid, entry['file'])
+            if not sidecar:
+                continue
+            ann = sidecar.get('annotation') or {}
+            if ann.get('centerline_px') and len(ann['centerline_px']) >= 2:
+                loaded_ann = ann
+                loaded_sidecar = sidecar
+                loaded_name = entry['file']
+                break
+
+        if loaded_ann:
+            cal = loaded_sidecar.get('calibration') or {}
+            processor.set_etalon_annotation(
+                centerline_px=loaded_ann.get('centerline_px'),
+                ignore_rects=loaded_ann.get('ignore_rects'),
+                step_px=loaded_ann.get('step_px'),
+                max_allowed_gap_mm=loaded_ann.get('max_allowed_gap_mm'),
+                pos_tolerance_mm=loaded_ann.get('pos_tolerance_mm'),
+                metrics=loaded_ann.get('metrics'),
+                annotation_roi=cal.get('roi'),
+            )
+            self._append_log(
+                'Загружен эталон [%s]: %s (точек оси: %d, масок IGNORE: %d)' % (
+                    pid, loaded_name, len(loaded_ann.get('centerline_px', [])),
+                    len(loaded_ann.get('ignore_rects', []))))
+            # Калибровка эталона против активной (без исправления на ходу)
+            etalon_px = (loaded_sidecar.get('calibration') or {}).get('px_per_mm')
+            cfg_px = (self.config_data.get('seam_control') or {}).get('px_per_mm')
+            try:
+                if etalon_px and cfg_px and abs(float(etalon_px) - float(cfg_px)) > \
+                        0.01 * float(cfg_px):
+                    self._append_log(
+                        'ВНИМАНИЕ: калибровка эталона px_per_mm=%.4f отличается '
+                        'от активной %.4f — проверьте калибровку!' %
+                        (float(etalon_px), float(cfg_px)), 'warning')
+            except (TypeError, ValueError):
+                pass
+        else:
+            processor.clear_etalon_annotation()
+            self._append_log(
+                'ВНИМАНИЕ: Для %s не найден размеченный эталон с траекторией шва!'
+                % pid, 'warning')
+
     def _on_train_mode_change(self):
         mode = self.train_mode_var.get()
         self.training_mode = (mode != 'production')
@@ -672,6 +821,8 @@ class InspectionGUI(tk.Tk):
             self._append_log('Режим: Инспекция по эталону')
         else:
             self._append_log('Режим: Инспекция (рабочий)')
+        if self.processor is not None:
+            self._apply_active_etalon_to_processor(self.processor)
         self._update_train_button_state()
 
     def _update_train_button_state(self):
@@ -732,6 +883,8 @@ class InspectionGUI(tk.Tk):
         self._append_log('Эталон сохранён: %s' % result.get('base_name', '?'))
         self.product_combo['values'] = self._list_product_ids()
         self.status_var.set('Эталон сохранён: %s' % result.get('base_name', '?'))
+        if self.processor is not None:
+            self._apply_active_etalon_to_processor(self.processor)
 
     def _on_close(self):
         if self.running:

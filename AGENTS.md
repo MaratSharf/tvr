@@ -150,6 +150,7 @@ pyinstaller --onefile main.py
 - `run_*_mode` functions in `main.py` accept optional `stop_event` (DI/trigger waits chunked at 0.5 s) and `reporter`; without them behavior is unchanged (console).
 - Stop button: conveyor OFF, `reset_outputs`, no result sent (cycle abort, not a failure).
 - ROI and settings are written to config.json atomically and applied to the live `SeamProcessor`.
+- «Эталоны» button opens `etalon_viewer.EtalonViewer`: list of etalons per ProductID, image with annotation overlay (centerline/ignore zones), passport + metrics, arrow-key navigation, re-annotate (`EtalonAnnotator`), delete (`EtalonStore.delete_etalon`).
 
 ## Critical Constraints
 

@@ -20,9 +20,9 @@
         }
     },
     "seam_control": {
-        "min_width_mm": 1.0,
-        "max_width_mm": 6.0,
-        "px_per_mm": 50.0,
+        "min_width_mm": 4.0,
+        "max_width_mm": 9.0,
+        "px_per_mm": 8.4011,
         "threshold": 120,
         "use_otsu": true,
         "step_px": 15,
@@ -31,7 +31,17 @@
         "min_fill_ratio": 0.85,
         "morph_kernel_size": 3,
         "min_contrast_std": 8.0,
-        "gap_min_width_mm": 0.2
+        "gap_min_width_mm": 0.2,
+        "edge_contrast_min": 15.0,
+        "min_valid_slices": 3,
+        "max_align_shift_mm": 15.0,
+        "skip_centerline_align": true,
+        "perf_timing": false,
+        "auto_centerline": true,
+        "save_diagnostics": true,
+        "diagnostics_dir": "data/diagnostics",
+        "diagnostics_keep": 20,
+        "limits_source": "config.json"
     },
     "communication": {
         "mode": "modbus",
@@ -79,10 +89,10 @@
     "results_folder": "C:\\proj\\python\\tvrus\\data\\results",
     "roi": {
         "enabled": true,
-        "x": 168,
-        "y": 105,
-        "w": 719,
-        "h": 521
+        "x": 323,
+        "y": 140,
+        "w": 1042,
+        "h": 655
     },
     "training": {
         "enabled": false,

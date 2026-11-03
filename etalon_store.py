@@ -185,6 +185,57 @@ class EtalonStore:
 
         return image, sidecar
 
+    def scan_etalons(self, product_id):
+        """
+        Список эталонов по файлам папки (не зависит от index.json).
+        Новые сверху. Для каждой записи читаются поля sidecar JSON.
+        """
+        folder = self.product_folder(product_id)
+        if not os.path.isdir(folder):
+            return []
+        entries = []
+        for name in sorted(os.listdir(folder)):
+            if not name.startswith('ET_') or not name.lower().endswith('.png'):
+                continue
+            entry = {
+                'file': name,
+                'json': os.path.splitext(name)[0] + '.json',
+                'label': None,
+                'defect_type': None,
+                'timestamp': None,
+                'note': None,
+                'mean_width_mm': None,
+            }
+            json_path = os.path.join(folder, entry['json'])
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        side = json.load(f)
+                    entry['label'] = side.get('label')
+                    entry['defect_type'] = side.get('defect_type')
+                    entry['timestamp'] = side.get('timestamp')
+                    entry['note'] = side.get('note')
+                    metrics = side.get('metrics') or {}
+                    entry['mean_width_mm'] = metrics.get('mean_width_mm')
+                except Exception:
+                    pass
+            entries.append(entry)
+        entries.sort(key=lambda e: e.get('timestamp') or e['file'], reverse=True)
+        return entries
+
+    def delete_etalon(self, product_id, file_name):
+        """Удаляет изображение и sidecar эталона, запись index.json."""
+        folder = self.product_folder(product_id)
+        base = os.path.splitext(file_name)[0]
+        for suffix in ('.png', '.json'):
+            path = os.path.join(folder, base + suffix)
+            if os.path.exists(path):
+                os.remove(path)
+        index = self._load_index(product_id)
+        index['etalons'] = [e for e in index.get('etalons', [])
+                            if e.get('file') != file_name]
+        self._save_index(product_id, index)
+
     # ------------------------------------------------------------------ #
     # Статистика автодопусков (медиана + MAD)
     # ------------------------------------------------------------------ #
